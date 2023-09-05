@@ -46,11 +46,14 @@ var discoveryMetrics *collection.Collection
 
 // Http starts serving
 func Http(continuousDiscovery bool) {
+	// 默认 continuousDiscovery 是 true
+
 	promptForSSLPasswords()
 	process.ContinuousRegistration(process.OrchestratorExecutionHttpMode, "")
 
 	martini.Env = martini.Prod
 	if config.Config.ServeAgentsHttp {
+		// 静默 ServeAgentsHttp 是 false 所以不会走到这个逻辑
 		go agentsHttp()
 	}
 	standardHttp(continuousDiscovery)
