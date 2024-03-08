@@ -35,7 +35,7 @@ import (
 	"github.com/openark/orchestrator/go/kv"
 	ometrics "github.com/openark/orchestrator/go/metrics"
 	"github.com/openark/orchestrator/go/process"
-	"github.com/openark/orchestrator/go/raft"
+	orcraft "github.com/openark/orchestrator/go/raft"
 	"github.com/openark/orchestrator/go/util"
 	"github.com/patrickmn/go-cache"
 	"github.com/rcrowley/go-metrics"
@@ -166,6 +166,8 @@ func handleDiscoveryRequests() {
 		go func() {
 			for {
 				instanceKey := discoveryQueue.Consume()
+				log.Warning(fmt.Sprintf("Discovery worker instanceKey = %s ", instanceKey))
+				// log.Warning(fmt.Sprintf("%s", debug.Stack()))
 				// Possibly this used to be the elected node, but has
 				// been demoted, while still the queue is full.
 				if !IsLeaderOrActive() {
@@ -303,6 +305,9 @@ func DiscoverInstance(instanceKey inst.InstanceKey) {
 // onHealthTick handles the actions to take to discover/poll instances
 func onHealthTick() {
 	wasAlreadyElected := IsLeader()
+	// 检查是不是 leader 进程
+	// log.Info("func onHealthTick -> wasAlreadyElected = ", wasAlreadyElected)
+	// log.Info("func onHealthTick -> orcraft.IsRaftEnabled() = ", orcraft.IsRaftEnabled())
 
 	if orcraft.IsRaftEnabled() {
 		if orcraft.IsLeader() {
@@ -319,6 +324,7 @@ func onHealthTick() {
 		}
 	}
 	if !orcraft.IsRaftEnabled() {
+		// 非 raft 模式下会走这个流程
 		myIsElectedNode, err := process.AttemptElection()
 		if err != nil {
 			log.Errore(err)
@@ -530,6 +536,7 @@ func ContinuousDiscovery() {
 			go func() {
 				onHealthTick()
 			}()
+			log.Info("select-case: healthTick")
 		case <-instancePollTick:
 			go func() {
 				// This tick does NOT do instance poll (these are handled by the oversampling discoveryTick)
@@ -541,12 +548,14 @@ func ContinuousDiscovery() {
 					go injectSeeds(&seedOnce)
 				}
 			}()
+			log.Info("select-case: instancePollTick")
 		case <-autoPseudoGTIDTick:
 			go func() {
 				if config.Config.AutoPseudoGTID && IsLeader() {
 					go InjectPseudoGTIDOnWriters()
 				}
 			}()
+			log.Info("select-case: autoPseudoGTIDTick")
 		case <-caretakingTick:
 			// Various periodic internal maintenance tasks
 			go func() {
@@ -586,10 +595,12 @@ func ContinuousDiscovery() {
 					go inst.LoadHostnameResolveCache()
 				}
 			}()
+			log.Info("select-case: caretakingTick")
 		case <-raftCaretakingTick:
 			if orcraft.IsRaftEnabled() && orcraft.IsLeader() {
 				go publishDiscoverMasters()
 			}
+			log.Info("select-case: raftCaretakingTick")
 		case <-recoveryTick:
 			go func() {
 				if IsLeaderOrActive() {
@@ -614,12 +625,14 @@ func ContinuousDiscovery() {
 					}()
 				}
 			}()
+			log.Info("select-case: recoveryTick")
 		case <-snapshotTopologiesTick:
 			go func() {
 				if IsLeaderOrActive() {
 					go inst.SnapshotTopologies()
 				}
 			}()
+			log.Info("select-case: snapshotTopologiesTick")
 		}
 	}
 }

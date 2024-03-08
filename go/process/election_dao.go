@@ -21,13 +21,21 @@ import (
 	"github.com/openark/golib/sqlutils"
 	"github.com/openark/orchestrator/go/config"
 	"github.com/openark/orchestrator/go/db"
-	"github.com/openark/orchestrator/go/raft"
+	orcraft "github.com/openark/orchestrator/go/raft"
 	"github.com/openark/orchestrator/go/util"
 )
 
+/**
+尝试把当前的 orchestrator 进程设置成 active_node,
+	1、如果设置成功返回 true, nil
+	2、如果进程本身就已经是 active_node 也返回 true, nil
+	3、如果没能把自己设置成 active_node 就返回 false, nil
+*/
 // AttemptElection tries to grab leadership (become active node)
 func AttemptElection() (bool, error) {
 	{
+		// 对于 insert ignore 来说在表中没有 ancher = 1 的数据时能插入成功；
+		// 对应到业务逻辑上就是说当前 orchestartor 进得是第一个启动的 orchestrator， 这个时候第一个启动的进程会成功 active_node
 		sqlResult, err := db.ExecOrchestrator(`
 		insert ignore into active_node (
 				anchor, hostname, token, first_seen_active, last_seen_active

@@ -79,6 +79,7 @@ func standardHttp(continuousDiscovery bool) {
 	m := martini.Classic()
 
 	switch strings.ToLower(config.Config.AuthenticationMethod) {
+	// 默认 AuthenticationMethod 是 "" 所以这个里会走到 default 逻辑
 	case "basic":
 		{
 			if config.Config.HTTPAuthUser == "" {
@@ -127,6 +128,7 @@ func standardHttp(continuousDiscovery bool) {
 		// start to expire metric collection info
 		discoveryMetrics = collection.CreateOrReturnCollection(discoveryMetricsName)
 		discoveryMetrics.SetExpirePeriod(time.Duration(config.Config.DiscoveryCollectionRetentionSeconds) * time.Second)
+		log.Info("config.Config.DiscoveryCollectionRetentionSeconds = ", config.Config.DiscoveryCollectionRetentionSeconds)
 
 		log.Info("Starting Discovery")
 		go logic.ContinuousDiscovery()

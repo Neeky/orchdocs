@@ -24,7 +24,7 @@ import (
 	"github.com/openark/orchestrator/go/config"
 	"github.com/openark/orchestrator/go/db"
 	"github.com/openark/orchestrator/go/process"
-	"github.com/openark/orchestrator/go/raft"
+	orcraft "github.com/openark/orchestrator/go/raft"
 	"github.com/openark/orchestrator/go/util"
 
 	"github.com/openark/golib/log"
@@ -54,9 +54,11 @@ func initializeAnalysisDaoPostConfiguration() {
 // GetReplicationAnalysis will check for replication problems (dead master; unreachable master; etc)
 func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints) ([]ReplicationAnalysis, error) {
 	result := []ReplicationAnalysis{}
-
+	log.Warning("GetReplicationAnalysis")
 	args := sqlutils.Args(config.Config.ReasonableLockedSemiSyncMasterSeconds, ValidSecondsFromSeenToLastAttemptedCheck(), config.Config.ReasonableReplicationLagSeconds, clusterName)
 	analysisQueryReductionClause := ``
+	// 打印一下 args 参数是多少
+	// log.Warning("GetReplicationAnalysis args=%s", args)
 
 	if config.Config.ReduceReplicationAnalysisCount {
 		analysisQueryReductionClause = `
@@ -410,6 +412,8 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 	`,
 		analysisQueryReductionClause)
 
+	// 打印一下查询语句
+	//log.Warning("GetReplicationAnalysis query=%s", query)
 	err := db.QueryOrchestrator(query, args, func(m sqlutils.RowMap) error {
 		a := ReplicationAnalysis{
 			Analysis:               NoProblem,
@@ -665,6 +669,7 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 			if a.SkippableDueToDowntime && !hints.IncludeDowntimed {
 				return
 			}
+			//log.Warning("GetReplicationAnalysis a=%s", a)
 			result = append(result, a)
 		}
 
