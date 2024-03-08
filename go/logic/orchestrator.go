@@ -302,12 +302,16 @@ func DiscoverInstance(instanceKey inst.InstanceKey) {
 	}
 }
 
+/**
+ * 检查自己是不是 leader
+ * 如果自己不是 leader 就走一下选举流程，选举完之后还不是主就退出
+ *
+ * 如果选举完成之后自己是主，那么把自己是主的这个信息记录到 isElectedNode 变量中
+ */
+
 // onHealthTick handles the actions to take to discover/poll instances
 func onHealthTick() {
 	wasAlreadyElected := IsLeader()
-	// 检查是不是 leader 进程
-	// log.Info("func onHealthTick -> wasAlreadyElected = ", wasAlreadyElected)
-	// log.Info("func onHealthTick -> orcraft.IsRaftEnabled() = ", orcraft.IsRaftEnabled())
 
 	if orcraft.IsRaftEnabled() {
 		if orcraft.IsLeader() {
@@ -324,7 +328,10 @@ func onHealthTick() {
 		}
 	}
 	if !orcraft.IsRaftEnabled() {
-		// 非 raft 模式下会走这个流程
+		/**
+		 * 基于元数据库选主的时候走这个逻辑，如果当前结点本身就是 leader 或是新选举成 leader 这个时候 myIsElectedNode 会是 true
+		 * 如果是 true 就更新 isElectedNode 的值更新为 1 这样就可以把自己的 leader 地位记录下来，不用每次都走选举流程
+		 */
 		myIsElectedNode, err := process.AttemptElection()
 		if err != nil {
 			log.Errore(err)
@@ -345,10 +352,18 @@ func onHealthTick() {
 	if !IsLeaderOrActive() {
 		return
 	}
+
+	/* 取得一段时间没有更新心跳的 mysql 实例的 InstanceKey 切片 */
 	instanceKeys, err := inst.ReadOutdatedInstanceKeys()
 	if err != nil {
 		log.Errore(err)
 	}
+
+	/**
+	 * 对于在这一轮选举中新选上来的 leader
+	 * 1. 更新一个这个 orchstrator 结点的信息(process.ThisNodeHealth 对象里面的主机名和 token)
+	 * 2. 把标记为维护中的实例都从元数据中清理掉
+	 */
 
 	if !wasAlreadyElected {
 		// Just turned to be leader!
@@ -367,6 +382,10 @@ func onHealthTick() {
 			instanceKeys = append(instanceKeys, <-snapshotDiscoveryKeys)
 		}
 	}()
+
+	/**
+	 * 把一段时间没有更新心跳的实例切换，压入 discoveryQueue 队列
+	 */
 	// avoid any logging unless there's something to be done
 	if len(instanceKeys) > 0 {
 		for _, instanceKey := range instanceKeys {
@@ -534,6 +553,10 @@ func ContinuousDiscovery() {
 		select {
 		case <-healthTick:
 			go func() {
+				/**
+				 * 完成 orchstrator 的 leader 选举如果当前进程被选成了 leader
+				 * 如果当前进程是 leader 了，就从元数据库里面把一段时间没有更新心跳的实例信息压入到 discoverQueue 队列里面去
+				 */
 				onHealthTick()
 			}()
 			log.Info("select-case: healthTick")

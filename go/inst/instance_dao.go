@@ -21,7 +21,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/go-sql-driver/mysql"
 	"regexp"
 	"runtime"
 	"sort"
@@ -29,6 +28,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 
 	"github.com/openark/golib/log"
 	"github.com/openark/golib/math"
@@ -1120,9 +1121,9 @@ func (this byNamePort) Less(i, j int) bool {
 }
 
 // BulkReadInstance returns a list of all instances from the database
-// - I only need the Hostname and Port fields.
-// - I must use readInstancesByCondition to ensure all column
-//   settings are correct.
+//   - I only need the Hostname and Port fields.
+//   - I must use readInstancesByCondition to ensure all column
+//     settings are correct.
 func BulkReadInstance() ([](*InstanceKey), error) {
 	// no condition (I want all rows) and no sorting (but this is done by Hostname, Port anyway)
 	const (
@@ -2376,6 +2377,10 @@ func ReadAllMinimalInstances() ([]MinimalInstance, error) {
 	})
 	return res, log.Errore(err)
 }
+
+/**
+ * 把一段时间没有更新心跳的实例取出来, 以 []InstanceKey 的形式返回
+ */
 
 // ReadOutdatedInstanceKeys reads and returns keys for all instances that are not up to date (i.e.
 // pre-configured time has passed since they were last checked)
