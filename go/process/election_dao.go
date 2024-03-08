@@ -31,6 +31,7 @@ import (
 	2、如果进程本身就已经是 active_node 也返回 true, nil
 	3、如果没能把自己设置成 active_node 就返回 false, nil
 */
+
 // AttemptElection tries to grab leadership (become active node)
 func AttemptElection() (bool, error) {
 	{
@@ -58,6 +59,11 @@ func AttemptElection() (bool, error) {
 		}
 	}
 	{
+		/* 如果上一步没有更新成功(RowsAffected == 0) 说明 active_node 表里面已经有数据了，业务上就是说已经有进程是 leader 了
+		 * 为了防止这个 leader 进程死掉了不知道(大于 config.ActiveNodeExpireSeconds 没有更新过心跳)，在主进程没有更新心跳的情况下
+		 * 把当前进程更新为 leader 进程
+		 */
+
 		// takeover from a node that has been inactive
 		sqlResult, err := db.ExecOrchestrator(`
 			update active_node set
@@ -84,6 +90,10 @@ func AttemptElection() (bool, error) {
 		}
 	}
 	{
+		/*
+		 * 如果能执行到这里，说明进程本身就是 leader 了，这个时候只要更新一下心跳就行了
+		 */
+
 		// Update last_seen_active is this very node is already the active node
 		sqlResult, err := db.ExecOrchestrator(`
 			update active_node set
@@ -110,6 +120,10 @@ func AttemptElection() (bool, error) {
 	return false, nil
 }
 
+/**
+ * 强制把自己设置为 leader, 如果依赖 raft 选举的话，是不能强制把自己设置为主的
+ */
+
 // GrabElection forcibly grabs leadership. Use with care!!
 func GrabElection() error {
 	if orcraft.IsRaftEnabled() {
@@ -127,6 +141,10 @@ func GrabElection() error {
 	return log.Errore(err)
 }
 
+/**
+ * 把 active_node 表中的数据清理掉，为重新选举创造条件
+ */
+
 // Reelect clears the way for re-elections. Active node is immediately demoted.
 func Reelect() error {
 	if orcraft.IsRaftEnabled() {
@@ -135,6 +153,10 @@ func Reelect() error {
 	_, err := db.ExecOrchestrator(`delete from active_node where anchor = 1`)
 	return log.Errore(err)
 }
+
+/**
+ * 参加 leader 的选举，返回当前选举出来的 leader 结点(NodeHealth 数据结构), 如果选举出来的是自己第二个返回值还要设置为 true , 如果是选举出的是其它结点那么要设置为 false
+ */
 
 // ElectedNode returns the details of the elected node, as well as answering the question "is this process the elected one"?
 func ElectedNode() (node NodeHealth, isElected bool, err error) {
@@ -158,6 +180,7 @@ func ElectedNode() (node NodeHealth, isElected bool, err error) {
 		return nil
 	})
 
+	/** 如果选举出来的结点是自己，就把 isElected 设置为 true */
 	isElected = (node.Hostname == ThisHostname && node.Token == util.ProcessToken.Hash)
 	return node, isElected, log.Errore(err)
 }
