@@ -113,6 +113,14 @@ func writeClusterAliasManualOverride(clusterName string, alias string) error {
 // UpdateClusterAliases writes down the cluster_alias table based on information
 // gained from database_instance
 func UpdateClusterAliases() error {
+	/**
+	 * 宕机的实例会第一时间记录到 database_instance_downtime 表， 这里通过 database_instance left join database_instance_downtime 能把宕机
+	 * 的实例信息查出来；
+	 *
+	 * 把查出来的实例(宕机实例)信息插入到 cluster_alias 表，这样就能在页面上看到实例 topo 的变化了
+	 *
+	 * 也就是这在没有实例宕机的情况下，不会向 cluster_alias 插入数据。
+	 */
 	writeFunc := func() error {
 		_, err := db.ExecOrchestrator(`
 			replace into
