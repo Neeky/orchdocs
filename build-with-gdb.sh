@@ -5,6 +5,7 @@ rm -rf orchestrator
 rm -rf orchestrator-3.2.6.tar.gz
 
 mkdir orchestrator
+cp -rf conf orchestrator/
 cp -rf resources orchestrator/
 mkdir orchestrator/bin/
 cp bin/orchestrator orchestrator/bin/
