@@ -22,3 +22,5 @@ main
 .vendor/go19
 /bin
 /build
+orchestrator
+orchestrator-3.2.6.tar.gz
