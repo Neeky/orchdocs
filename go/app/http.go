@@ -105,6 +105,7 @@ func standardHttp(continuousDiscovery bool) {
 		}
 	default:
 		{
+			// 默认会走到这里
 			// We inject a dummy User object because we have function signatures with User argument in api.go
 			m.Map(auth.User(""))
 		}

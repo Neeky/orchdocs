@@ -641,6 +641,9 @@ func ContinuousDiscovery() {
 							return
 						}
 						if runCheckAndRecoverOperationsTimeRipe() {
+							/*
+							 * 由于每次循环的时候都不知道是谁宕机了，所以这里传的是空值
+							 */
 							CheckAndRecover(nil, nil, false)
 						} else {
 							log.Debugf("Waiting for %+v seconds to pass before running failure detection/recovery", checkAndRecoverWaitPeriod.Seconds())

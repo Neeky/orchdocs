@@ -413,7 +413,7 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 		analysisQueryReductionClause)
 
 	// 打印一下查询语句
-	//log.Warning("GetReplicationAnalysis query=%s", query)
+	// log.Warning("GetReplicationAnalysis execute stmt", "query", query, "args", args)
 	err := db.QueryOrchestrator(query, args, func(m sqlutils.RowMap) error {
 		a := ReplicationAnalysis{
 			Analysis:               NoProblem,
@@ -421,10 +421,11 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 			ProcessingNodeToken:    util.ProcessToken.Hash,
 		}
 
-		a.IsMaster = m.GetBool("is_master")
-		a.IsReplicationGroupMember = m.GetBool("is_replication_group_member")
-		countCoMasterReplicas := m.GetUint("count_co_master_replicas")
+		a.IsMaster = m.GetBool("is_master")                                   // 是不是 master 结点
+		a.IsReplicationGroupMember = m.GetBool("is_replication_group_member") // 是不是主复制
+		countCoMasterReplicas := m.GetUint("count_co_master_replicas")        // 候选 master 的个数
 		a.IsCoMaster = m.GetBool("is_co_master") || (countCoMasterReplicas > 0)
+		// 这里的 hostname:port 就是宕机的实例
 		a.AnalyzedInstanceKey = InstanceKey{Hostname: m.GetString("hostname"), Port: m.GetInt("port")}
 		a.AnalyzedInstanceMasterKey = InstanceKey{Hostname: m.GetString("master_host"), Port: m.GetInt("master_port")}
 		a.AnalyzedInstanceDataCenter = m.GetString("data_center")
@@ -442,9 +443,9 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 		a.GTIDMode = m.GetString("gtid_mode")
 		a.LastCheckValid = m.GetBool("is_last_check_valid")
 		a.LastCheckPartialSuccess = m.GetBool("last_check_partial_success")
-		a.CountReplicas = m.GetUint("count_replicas")
-		a.CountValidReplicas = m.GetUint("count_valid_replicas")
-		a.CountValidReplicatingReplicas = m.GetUint("count_valid_replicating_replicas")
+		a.CountReplicas = m.GetUint("count_replicas")                                   // 总的 slave 结点数量
+		a.CountValidReplicas = m.GetUint("count_valid_replicas")                        // 活着的 slave 结点数量
+		a.CountValidReplicatingReplicas = m.GetUint("count_valid_replicating_replicas") // 活着并且复制也正常的 slave 结点数量
 		a.CountReplicasFailingToConnectToMaster = m.GetUint("count_replicas_failing_to_connect_to_master")
 		a.CountDowntimedReplicas = m.GetUint("count_downtimed_replicas")
 		a.ReplicationDepth = m.GetUint("replication_depth")
@@ -487,6 +488,8 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 
 		a.IsReadOnly = m.GetUint("read_only") == 1
 
+		// 宕机的话实例的 a.LastCheckValid 会是 False 所以这里会；
+		// 也就是说会进入下面这个 if 块
 		if !a.LastCheckValid {
 			analysisMessage := fmt.Sprintf("analysis: ClusterName: %+v, IsMaster: %+v, LastCheckValid: %+v, LastCheckPartialSuccess: %+v, CountReplicas: %+v, CountValidReplicas: %+v, CountValidReplicatingReplicas: %+v, CountLaggingReplicas: %+v, CountDelayedReplicas: %+v, CountReplicasFailingToConnectToMaster: %+v",
 				a.ClusterDetails.ClusterName, a.IsMaster, a.LastCheckValid, a.LastCheckPartialSuccess, a.CountReplicas, a.CountValidReplicas, a.CountValidReplicatingReplicas, a.CountLaggingReplicas, a.CountDelayedReplicas, a.CountReplicasFailingToConnectToMaster,
@@ -495,15 +498,17 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 				log.Debugf(analysisMessage)
 			}
 		}
+
+		// 在架构是 master --> slave 的情况下会进入下面的 if 块
 		if !a.IsReplicationGroupMember /* Traditional Async/Semi-sync replication issue detection */ {
 			if a.IsMaster && !a.LastCheckValid && a.CountReplicas == 0 {
 				a.Analysis = DeadMasterWithoutReplicas
 				a.Description = "Master cannot be reached by orchestrator and has no replica"
-				//
+				// master 宕机了，并且没有 slave 结点
 			} else if a.IsMaster && !a.LastCheckValid && a.CountValidReplicas == a.CountReplicas && a.CountValidReplicatingReplicas == 0 {
 				a.Analysis = DeadMaster
 				a.Description = "Master cannot be reached by orchestrator and none of its replicas is replicating"
-				//
+				// master 宕机了，并且没有 slave 结点的复制都断了
 			} else if a.IsMaster && !a.LastCheckValid && a.CountReplicas > 0 && a.CountValidReplicas == 0 && a.CountValidReplicatingReplicas == 0 {
 				a.Analysis = DeadMasterAndReplicas
 				a.Description = "Master cannot be reached by orchestrator and none of its replicas is replicating"

@@ -1899,8 +1899,14 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 
 // CheckAndRecover is the main entry point for the recovery mechanism
 func CheckAndRecover(specificInstance *inst.InstanceKey, candidateInstanceKey *inst.InstanceKey, skipProcesses bool) (recoveryAttempted bool, promotedReplicaKey *inst.InstanceKey, err error) {
+	log.Warning("enter func CheckAndRecover", "specificInstance", specificInstance, "candidateInstanceKey", candidateInstanceKey, "skipProcesses", skipProcesses)
 	// Allow the analysis to run even if we don't want to recover
+	/*
+	 * 由于到这里的时候也不知道是哪个宕机了，所以第一个参数传 ""
+	 */
 	replicationAnalysis, err := inst.GetReplicationAnalysis("", &inst.ReplicationAnalysisHints{IncludeDowntimed: true, AuditAnalysis: true})
+
+	//log.Warning("GetReplicationAnalysis result ", "replicationAnalysis", replicationAnalysis)
 	if err != nil {
 		return false, nil, log.Errore(err)
 	}
