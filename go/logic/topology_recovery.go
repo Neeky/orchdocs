@@ -1789,11 +1789,17 @@ func runEmergentOperations(analysisEntry *inst.ReplicationAnalysis) {
 	}
 }
 
+/*
+ * 根据不同的宕机场景选择不同的 “CheckAndRecoverFunction” 来执行，注意是在当前协程中执行而非另外开一个新
+ */
 // executeCheckAndRecoverFunction will choose the correct check & recovery function based on analysis.
 // It executes the function synchronuously
 func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, candidateInstanceKey *inst.InstanceKey, forceInstanceRecovery bool, skipProcesses bool) (recoveryAttempted bool, topologyRecovery *TopologyRecovery, err error) {
 	atomic.AddInt64(&countPendingRecoveries, 1)
 	defer atomic.AddInt64(&countPendingRecoveries, -1)
+
+	// 先打印一下将要执行 recover 的实例信息
+	log.Warning("enter executeCheckAndRecoverFunction", "Analysis", analysisEntry.Analysis, "AnalyzedInstanceKey", analysisEntry.AnalyzedInstanceKey)
 
 	checkAndRecoverFunction, isActionableRecovery := getCheckAndRecoverFunction(analysisEntry.Analysis, &analysisEntry.AnalyzedInstanceKey)
 	analysisEntry.IsActionableRecovery = isActionableRecovery
@@ -1903,6 +1909,8 @@ func CheckAndRecover(specificInstance *inst.InstanceKey, candidateInstanceKey *i
 	// Allow the analysis to run even if we don't want to recover
 	/*
 	 * 由于到这里的时候也不知道是哪个宕机了，所以第一个参数传 ""
+	 * 返回值就是宕机结点的列表；由于 ReplicationAnalysis 结构中保存了上级 master 、当前结点、下级 slave 的信息
+	 * 所以基本已经知道要怎么切了
 	 */
 	replicationAnalysis, err := inst.GetReplicationAnalysis("", &inst.ReplicationAnalysisHints{IncludeDowntimed: true, AuditAnalysis: true})
 
@@ -1937,6 +1945,9 @@ func CheckAndRecover(specificInstance *inst.InstanceKey, candidateInstanceKey *i
 				promotedReplicaKey = topologyRecovery.SuccessorKey
 			}
 		} else {
+			/*
+			 * 默认情况下会走到这里，也就是说每一个 recover 的流程会在一个单独的协程中进行
+			 */
 			go func() {
 				_, _, err := executeCheckAndRecoverFunction(analysisEntry, candidateInstanceKey, false, skipProcesses)
 				log.Errore(err)

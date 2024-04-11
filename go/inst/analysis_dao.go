@@ -421,33 +421,33 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 			ProcessingNodeToken:    util.ProcessToken.Hash,
 		}
 
-		a.IsMaster = m.GetBool("is_master")                                   // 是不是 master 结点
-		a.IsReplicationGroupMember = m.GetBool("is_replication_group_member") // 是不是主复制
-		countCoMasterReplicas := m.GetUint("count_co_master_replicas")        // 候选 master 的个数
-		a.IsCoMaster = m.GetBool("is_co_master") || (countCoMasterReplicas > 0)
-		// 这里的 hostname:port 就是宕机的实例
-		a.AnalyzedInstanceKey = InstanceKey{Hostname: m.GetString("hostname"), Port: m.GetInt("port")}
-		a.AnalyzedInstanceMasterKey = InstanceKey{Hostname: m.GetString("master_host"), Port: m.GetInt("master_port")}
-		a.AnalyzedInstanceDataCenter = m.GetString("data_center")
-		a.AnalyzedInstanceRegion = m.GetString("region")
-		a.AnalyzedInstancePhysicalEnvironment = m.GetString("physical_environment")
+		a.IsMaster = m.GetBool("is_master")                                     // 是不是 master 结点
+		a.IsReplicationGroupMember = m.GetBool("is_replication_group_member")   // 是不是主复制
+		countCoMasterReplicas := m.GetUint("count_co_master_replicas")          // 候选 master 的个数
+		a.IsCoMaster = m.GetBool("is_co_master") || (countCoMasterReplicas > 0) // 当前结点是不是候选主
+
+		a.AnalyzedInstanceKey = InstanceKey{Hostname: m.GetString("hostname"), Port: m.GetInt("port")}                 // 这里的 hostname:port 就是宕机的实例
+		a.AnalyzedInstanceMasterKey = InstanceKey{Hostname: m.GetString("master_host"), Port: m.GetInt("master_port")} // 当前结点的 master 结点，这样 orchestarto 就支持多层级的复制了
+		a.AnalyzedInstanceDataCenter = m.GetString("data_center")                                                      // 数据中心
+		a.AnalyzedInstanceRegion = m.GetString("region")                                                               // region
+		a.AnalyzedInstancePhysicalEnvironment = m.GetString("physical_environment")                                    // 物理环境
 		a.AnalyzedInstanceBinlogCoordinates = BinlogCoordinates{
 			LogFile: m.GetString("binary_log_file"),
 			LogPos:  m.GetInt64("binary_log_pos"),
 			Type:    BinaryLog,
 		}
-		isStaleBinlogCoordinates := m.GetBool("is_stale_binlog_coordinates")
-		a.ClusterDetails.ClusterName = m.GetString("cluster_name")
-		a.ClusterDetails.ClusterAlias = m.GetString("cluster_alias")
-		a.ClusterDetails.ClusterDomain = m.GetString("cluster_domain")
+		isStaleBinlogCoordinates := m.GetBool("is_stale_binlog_coordinates") // binlog 的异常到当前时间是否超过 10 s
+		a.ClusterDetails.ClusterName = m.GetString("cluster_name")           // 集群名
+		a.ClusterDetails.ClusterAlias = m.GetString("cluster_alias")         // 集群别名
+		a.ClusterDetails.ClusterDomain = m.GetString("cluster_domain")       // 域名(能取到 domain_name 就用它，取不到就用 cluster_name )
 		a.GTIDMode = m.GetString("gtid_mode")
-		a.LastCheckValid = m.GetBool("is_last_check_valid")
-		a.LastCheckPartialSuccess = m.GetBool("last_check_partial_success")
-		a.CountReplicas = m.GetUint("count_replicas")                                   // 总的 slave 结点数量
-		a.CountValidReplicas = m.GetUint("count_valid_replicas")                        // 活着的 slave 结点数量
-		a.CountValidReplicatingReplicas = m.GetUint("count_valid_replicating_replicas") // 活着并且复制也正常的 slave 结点数量
-		a.CountReplicasFailingToConnectToMaster = m.GetUint("count_replicas_failing_to_connect_to_master")
-		a.CountDowntimedReplicas = m.GetUint("count_downtimed_replicas")
+		a.LastCheckValid = m.GetBool("is_last_check_valid")                                                // 最近一次检查的时候它是不是还活着，如果活着就是 1，死了就是 0
+		a.LastCheckPartialSuccess = m.GetBool("last_check_partial_success")                                // ？
+		a.CountReplicas = m.GetUint("count_replicas")                                                      // 总的 slave 结点数量
+		a.CountValidReplicas = m.GetUint("count_valid_replicas")                                           // 活着的 slave 结点数量
+		a.CountValidReplicatingReplicas = m.GetUint("count_valid_replicating_replicas")                    // 活着并且复制也正常的 slave 结点数量
+		a.CountReplicasFailingToConnectToMaster = m.GetUint("count_replicas_failing_to_connect_to_master") // 连接到 master 失败的节点
+		a.CountDowntimedReplicas = m.GetUint("count_downtimed_replicas")                                   // 标记为下线的结点
 		a.ReplicationDepth = m.GetUint("replication_depth")
 		a.IsFailingToConnectToMaster = m.GetBool("is_failing_to_connect_to_master")
 		a.IsDowntimed = m.GetBool("is_downtimed")
@@ -512,7 +512,7 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 			} else if a.IsMaster && !a.LastCheckValid && a.CountReplicas > 0 && a.CountValidReplicas == 0 && a.CountValidReplicatingReplicas == 0 {
 				a.Analysis = DeadMasterAndReplicas
 				a.Description = "Master cannot be reached by orchestrator and none of its replicas is replicating"
-				//
+				// master 宕机了，并且没有 slave 结点的复制都断了
 			} else if a.IsMaster && !a.LastCheckValid && a.CountValidReplicas < a.CountReplicas && a.CountValidReplicas > 0 && a.CountValidReplicatingReplicas == 0 {
 				a.Analysis = DeadMasterAndSomeReplicas
 				a.Description = "Master cannot be reached by orchestrator; some of its replicas are unreachable and none of its reachable replicas is replicating"
@@ -648,6 +648,8 @@ func GetReplicationAnalysis(clusterName string, hints *ReplicationAnalysisHints)
 				return
 			}
 			for _, filter := range config.Config.RecoveryIgnoreHostnameFilters {
+				// 只要与 RecoveryIgnoreHostnameFilters 里面的任意一个正则能匹配到
+				// 就会直接返回，也就同没有机会执行最后的 append(result, a)
 				if matched, _ := regexp.MatchString(filter, a.AnalyzedInstanceKey.Hostname); matched {
 					return
 				}
