@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	goos "os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -840,7 +841,10 @@ func replacePromotedReplicaWithCandidate(topologyRecovery *TopologyRecovery, dea
 // checkAndRecoverDeadMaster checks a given analysis, decides whether to take action, and possibly takes action
 // Returns true when action was taken.
 func checkAndRecoverDeadMaster(analysisEntry inst.ReplicationAnalysis, candidateInstanceKey *inst.InstanceKey, forceInstanceRecovery bool, skipProcesses bool) (recoveryAttempted bool, topologyRecovery *TopologyRecovery, err error) {
+	// 先打印一下参数
+	log.Warningf("enter checkAndRecoverDeadMaster func: analysisEntry.AnalyzedInstanceKey=%s, forceInstanceRecovery=%v, analysisEntry.ClusterDetails.HasAutomatedMasterRecovery=%v", analysisEntry.AnalyzedInstanceKey.String(), forceInstanceRecovery, analysisEntry.ClusterDetails.HasAutomatedMasterRecovery)
 	if !(forceInstanceRecovery || analysisEntry.ClusterDetails.HasAutomatedMasterRecovery) {
+		log.Warning("checkAndRecoverDeadMaster short return")
 		return false, nil, nil
 	}
 	topologyRecovery, err = AttemptRecoveryRegistration(&analysisEntry, !forceInstanceRecovery, !forceInstanceRecovery)
@@ -1799,7 +1803,7 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 	defer atomic.AddInt64(&countPendingRecoveries, -1)
 
 	// 先打印一下将要执行 recover 的实例信息
-	log.Warning("enter executeCheckAndRecoverFunction", "Analysis", analysisEntry.Analysis, "AnalyzedInstanceKey", analysisEntry.AnalyzedInstanceKey)
+	log.Warning("enter executeCheckAndRecoverFunction", "Analysis", analysisEntry.Analysis, "AnalyzedInstanceKey", analysisEntry.AnalyzedInstanceKey.StringCode(), "candidateInstanceKey", candidateInstanceKey.StringCode())
 
 	checkAndRecoverFunction, isActionableRecovery := getCheckAndRecoverFunction(analysisEntry.Analysis, &analysisEntry.AnalyzedInstanceKey)
 	analysisEntry.IsActionableRecovery = isActionableRecovery
@@ -1816,6 +1820,9 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 
 		return false, nil, nil
 	}
+	// 检查一下有没有选择出要执行的文档
+	log.Warning("checkAndRecoverFunction != nil", "isActionableRecovery", strconv.FormatBool(isActionableRecovery))
+
 	// we have a recovery function; its execution still depends on filters if not disabled.
 	if isActionableRecovery || util.ClearToLog("executeCheckAndRecoverFunction: detection", analysisEntry.AnalyzedInstanceKey.StringCode()) {
 		log.Infof("executeCheckAndRecoverFunction: proceeding with %+v detection on %+v; isActionable?: %+v; skipProcesses: %+v", analysisEntry.Analysis, analysisEntry.AnalyzedInstanceKey, isActionableRecovery, skipProcesses)
@@ -1846,6 +1853,8 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 		log.Errorf("executeCheckAndRecoverFunction: error on failure detection: %+v", err)
 		return false, nil, err
 	}
+	log.Warning("checkAndExecuteFailureDetectionProcesses complete", "registrationSuccess", strconv.FormatBool(registrationSuccess), "err", err)
+
 	// We don't mind whether detection really executed the processes or not
 	// (it may have been silenced due to previous detection). We only care there's no error.
 
@@ -1868,6 +1877,7 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 			analysisEntry.Analysis, analysisEntry.AnalyzedInstanceKey, candidateInstanceKey, skipProcesses)
 	}
 
+	log.Warning("Actually attempt recovery")
 	// Actually attempt recovery:
 	if isActionableRecovery || util.ClearToLog("executeCheckAndRecoverFunction: recovery", analysisEntry.AnalyzedInstanceKey.StringCode()) {
 		log.Infof("executeCheckAndRecoverFunction: proceeding with %+v recovery on %+v; isRecoverable?: %+v; skipProcesses: %+v", analysisEntry.Analysis, analysisEntry.AnalyzedInstanceKey, isActionableRecovery, skipProcesses)
@@ -1903,6 +1913,9 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 	return recoveryAttempted, topologyRecovery, err
 }
 
+/*
+ * 看默认都是用 CheckAndRecover(nil, nil, false) 这种形式在调用
+ */
 // CheckAndRecover is the main entry point for the recovery mechanism
 func CheckAndRecover(specificInstance *inst.InstanceKey, candidateInstanceKey *inst.InstanceKey, skipProcesses bool) (recoveryAttempted bool, promotedReplicaKey *inst.InstanceKey, err error) {
 	log.Warning("enter func CheckAndRecover", "specificInstance", specificInstance, "candidateInstanceKey", candidateInstanceKey, "skipProcesses", skipProcesses)
