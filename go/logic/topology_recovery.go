@@ -841,14 +841,37 @@ func replacePromotedReplicaWithCandidate(topologyRecovery *TopologyRecovery, dea
 // checkAndRecoverDeadMaster checks a given analysis, decides whether to take action, and possibly takes action
 // Returns true when action was taken.
 func checkAndRecoverDeadMaster(analysisEntry inst.ReplicationAnalysis, candidateInstanceKey *inst.InstanceKey, forceInstanceRecovery bool, skipProcesses bool) (recoveryAttempted bool, topologyRecovery *TopologyRecovery, err error) {
-	// 先打印一下参数
-	log.Warningf("enter checkAndRecoverDeadMaster func: analysisEntry.AnalyzedInstanceKey=%s, forceInstanceRecovery=%v, analysisEntry.ClusterDetails.HasAutomatedMasterRecovery=%v", analysisEntry.AnalyzedInstanceKey.String(), forceInstanceRecovery, analysisEntry.ClusterDetails.HasAutomatedMasterRecovery)
+	/*
+	 * 先打印一下参数
+	 */
+	log.Warning("enter checkAndRecoverDeadMaster func:", "analysisEntry", analysisEntry.AnalyzedInstanceKey.String())
+	log.Warning("enter checkAndRecoverDeadMaster func:", "candidateInstanceKey", candidateInstanceKey)
+	log.Warning("enter checkAndRecoverDeadMaster func:", "forceInstanceRecovery", strconv.FormatBool(forceInstanceRecovery)) // 正常流程下这个是 false
+	log.Warning("enter checkAndRecoverDeadMaster func:", "skipProcesses", strconv.FormatBool(skipProcesses))                 // 正常流程下这个是 false
+
+	/*
+	 * 检查当前结点的集群配置是否需要自动 revcover ， 如果是不需要的流程就不要再走下去了。
+	 */
 	if !(forceInstanceRecovery || analysisEntry.ClusterDetails.HasAutomatedMasterRecovery) {
 		log.Warning("checkAndRecoverDeadMaster short return")
 		return false, nil, nil
 	}
+
+	/*
+	 * 如果能走到这里，说明集群是需要 recovery 的，进行 recovery 之前要检查一下是不是已经有其它 orchestartor 在做 recovery 了
+	 * 如果有其它的 recovery 在做了 AttemptRecoveryRegistration 就会返回 nil, error ；
+	 * 如果当前还没有任何其它的 orchestrator 在做 recovery ，AttemptRecoveryRegistration 会创建一个新的 TopologyRecovery 对象并把它持久化到元数据库
+	 * 并返回刚才创建的 TopologyRecovery 对象的指针。  在 ，AttemptRecoveryRegistration 的内部会把 TopologyRecovery 对象的信息持久化到 topology_recovery 表
+	 *
+	 * 综上 如果 AttemptRecoveryRegistration 返回的 TopologyRecovery 指针不是 nil ,说明这个 TopologyRecovery 对象就是它创建的，并且没有其它 orchestrator 在做 recovery
+	 */
 	topologyRecovery, err = AttemptRecoveryRegistration(&analysisEntry, !forceInstanceRecovery, !forceInstanceRecovery)
 	if topologyRecovery == nil {
+		/*
+		 * 说明有其它 orchestartor 在做 recovery ，那么需要直接短路(返回不要做搞了)
+		 * 就算是不再继续了，还是要在数据库里面记录一笔，好知道有这么件事发生了。
+		 * 记录会保存到 topology_recovery_steps 表里面
+		 */
 		AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("found an active or recent recovery on %+v. Will not issue another RecoverDeadMaster.", analysisEntry.AnalyzedInstanceKey))
 		return false, nil, err
 	}
@@ -1803,7 +1826,10 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 	defer atomic.AddInt64(&countPendingRecoveries, -1)
 
 	// 先打印一下将要执行 recover 的实例信息
-	log.Warning("enter executeCheckAndRecoverFunction", "Analysis", analysisEntry.Analysis, "AnalyzedInstanceKey", analysisEntry.AnalyzedInstanceKey.StringCode(), "candidateInstanceKey", candidateInstanceKey.StringCode())
+	//log.Warning("enter executeCheckAndRecoverFunction", "Analysis", analysisEntry.Analysis, "AnalyzedInstanceKey", analysisEntry.AnalyzedInstanceKey.StringCode(), "candidateInstanceKey", candidateInstanceKey)
+	log.Warning("enter executeCheckAndRecoverFunction", "Analysis", analysisEntry.Analysis)
+	log.Warning("enter executeCheckAndRecoverFunction", "candidateInstanceKey", candidateInstanceKey)
+	log.Warning("enter executeCheckAndRecoverFunction", "forceInstanceRecovery", strconv.FormatBool(forceInstanceRecovery), "skipProcesses", strconv.FormatBool(skipProcesses))
 
 	checkAndRecoverFunction, isActionableRecovery := getCheckAndRecoverFunction(analysisEntry.Analysis, &analysisEntry.AnalyzedInstanceKey)
 	analysisEntry.IsActionableRecovery = isActionableRecovery

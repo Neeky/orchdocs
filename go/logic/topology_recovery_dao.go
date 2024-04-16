@@ -26,7 +26,7 @@ import (
 	"github.com/openark/orchestrator/go/db"
 	"github.com/openark/orchestrator/go/inst"
 	"github.com/openark/orchestrator/go/process"
-	"github.com/openark/orchestrator/go/raft"
+	orcraft "github.com/openark/orchestrator/go/raft"
 	"github.com/openark/orchestrator/go/util"
 )
 
@@ -203,6 +203,14 @@ func writeTopologyRecovery(topologyRecovery *TopologyRecovery) (*TopologyRecover
 	return topologyRecovery, nil
 }
 
+/*
+ * 尝试向 topology_recovery 表增加一条新的记录，用于标记一个正是在执行的 topology-recovery 流程
+ * 在尝试写之前会先检查一下是不是已经有对应的 topology-recovery 流程了，如果有就退出
+ * 这样就不会重复了
+ *
+ * 这里的已经存在 topology-recovery 流程是比较模糊的，比如当前实例刚从完成 recovery 也算
+ *
+ */
 // AttemptRecoveryRegistration tries to add a recovery entry; if this fails that means recovery is already in place.
 func AttemptRecoveryRegistration(analysisEntry *inst.ReplicationAnalysis, failIfFailedInstanceInActiveRecovery bool, failIfClusterInActiveRecovery bool) (*TopologyRecovery, error) {
 	if failIfFailedInstanceInActiveRecovery {
