@@ -79,15 +79,23 @@ func mappedClusterNameToAlias(clusterName string) string {
 	return ""
 }
 
+/*
+ * 集群信息对象
+ *
+ * 从它的设计来看一个集群应该有 3 个维度可以标识他了
+ * 1、clusterName   集群名
+ * 2、clusterAlias  对人类更加友好的一个名字
+ * 3、clusterDomain 集群 master 结点的 域名、vip、dns-A-记录
+ */
 // ClusterInfo makes for a cluster status/info summary
 type ClusterInfo struct {
 	ClusterName                            string
 	ClusterAlias                           string // Human friendly alias
 	ClusterDomain                          string // CNAME/VIP/A-record/whatever of the master of this cluster
-	CountInstances                         uint
-	HeuristicLag                           int64
-	HasAutomatedMasterRecovery             bool
-	HasAutomatedIntermediateMasterRecovery bool
+	CountInstances                         uint   // 实例数
+	HeuristicLag                           int64  // 探测间隔
+	HasAutomatedMasterRecovery             bool   // 是否命中 config.Config.RecoverMasterClusterFilters 中配置的正则
+	HasAutomatedIntermediateMasterRecovery bool   // 是否命中 config.Config.RecoverIntermediateMasterClusterFilters 中配置的正则
 }
 
 // ReadRecoveryInfo
