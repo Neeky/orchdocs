@@ -19,10 +19,12 @@ package inst
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/openark/orchestrator/go/config"
 	"github.com/openark/orchestrator/go/kv"
+	"github.com/outbrain/golib/log"
 )
 
 func GetClusterMasterKVKey(clusterAlias string) string {
@@ -90,12 +92,20 @@ type ClusterInfo struct {
 
 // ReadRecoveryInfo
 func (this *ClusterInfo) ReadRecoveryInfo() {
+	log.Warning("enter ClusterInfo.ReadRecoveryInfo", "HasAutomatedMasterRecovery", this.HasAutomatedMasterRecovery)
+	log.Warning("enter ClusterInfo.ReadRecoveryInfo", "HasAutomatedIntermediateMasterRecovery", this.HasAutomatedIntermediateMasterRecovery)
+
 	this.HasAutomatedMasterRecovery = this.filtersMatchCluster(config.Config.RecoverMasterClusterFilters)
 	this.HasAutomatedIntermediateMasterRecovery = this.filtersMatchCluster(config.Config.RecoverIntermediateMasterClusterFilters)
+
+	log.Warning("exit ClusterInfo.ReadRecoveryInfo", "HasAutomatedMasterRecovery", this.HasAutomatedMasterRecovery)
+	log.Warning("exit ClusterInfo.ReadRecoveryInfo", "HasAutomatedIntermediateMasterRecovery", this.HasAutomatedIntermediateMasterRecovery)
 }
 
 // filtersMatchCluster will see whether the given filters match the given cluster details
 func (this *ClusterInfo) filtersMatchCluster(filters []string) bool {
+	log.Warning("enter ClusterInfo.filtersMatchCluster:", "filters", filters)
+	log.Warning("enter ClusterInfo.filtersMatchCluster:", "this.ClusterName", this.ClusterName, "this.ClusterAlias", this.ClusterAlias)
 	for _, filter := range filters {
 		if filter == this.ClusterName {
 			return true
@@ -121,6 +131,7 @@ func (this *ClusterInfo) filtersMatchCluster(filters []string) bool {
 			return true
 		}
 	}
+	log.Warning("exit ClusterInfo.filtersMatchCluster:", "return", strconv.FormatBool(false))
 	return false
 }
 
