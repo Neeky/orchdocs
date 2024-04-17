@@ -103,6 +103,10 @@ type ClusterInfo struct {
 }
 
 /*
+ * 从配置文件中读取 config.Config.RecoverMasterClusterFilters 和 config.Config.RecoverIntermediateMasterClusterFilters 这个两项的值
+ * 1、只有能被  config.Config.RecoverMasterClusterFilters 中给定的 pattern 匹配的实例才会进行宕机切换
+ * 2、config.Config.RecoverIntermediateMasterClusterFilters 同理
+ *
  *
  */
 // ReadRecoveryInfo
