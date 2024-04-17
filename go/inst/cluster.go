@@ -64,6 +64,10 @@ func GetClusterMasterKVPairs(clusterAlias string, masterKey *InstanceKey) (kvPai
 	return kvPairs
 }
 
+/*
+ * 根据 config.Config.ClusterNameToAlias 中配置的转换规则，把 clusterName 转换成对应的 clusterAlias
+ * 如果没有任何一条规则与之匹配就返回  "" 串
+ */
 // mappedClusterNameToAlias attempts to match a cluster with an alias based on
 // configured ClusterNameToAlias map
 func mappedClusterNameToAlias(clusterName string) string {
@@ -98,6 +102,9 @@ type ClusterInfo struct {
 	HasAutomatedIntermediateMasterRecovery bool   // 是否命中 config.Config.RecoverIntermediateMasterClusterFilters 中配置的正则
 }
 
+/*
+ *
+ */
 // ReadRecoveryInfo
 func (this *ClusterInfo) ReadRecoveryInfo() {
 	log.Warning("enter ClusterInfo.ReadRecoveryInfo", "HasAutomatedMasterRecovery", this.HasAutomatedMasterRecovery)
