@@ -16,6 +16,12 @@
 
 package inst
 
+/*
+ * 审计日志至少包涵 3 个维度
+ * 1、实例 InstanceKey
+ * 2、时间 AuditTimestamp
+ * 3、类型 & 信息   AuditType & Message
+ */
 // Audit presents a single audit entry (namely in the database)
 type Audit struct {
 	AuditId          int64
