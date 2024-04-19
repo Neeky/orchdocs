@@ -30,6 +30,10 @@ import (
 
 var EmptyEnv = []string{}
 
+/*
+ * orchestrator 执行的所有外部命令都通过这个函数来调用；对于命令的输出会直接打开 log.Error 里面，所以这个函数的调用方是拿不到输出的。
+ * 输出在这个函数就被吞掉了
+ */
 // CommandRun executes some text as a command. This is assumed to be
 // text that will be run by a shell so we need to write out the
 // command to a temporary file and then ask the shell to execute
@@ -66,11 +70,15 @@ func CommandRun(commandText string, env []string, arguments ...string) error {
 	return nil
 }
 
+/*
+ * 把脚本包装成 cmd 命令对象的打指针并返回
+ */
 // generateShellScript generates a temporary shell script based on
 // the given command to be executed, writes the command to a temporary
 // file and returns the exec.Command which can be executed together
 // with the script name that was created.
 func generateShellScript(commandText string, env []string, arguments ...string) (*exec.Cmd, string, error) {
+	// 默认情况下这里的 shell 会是 bash
 	shell := config.Config.ProcessesShellCommand
 
 	commandBytes := []byte(commandText)
