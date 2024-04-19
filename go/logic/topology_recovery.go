@@ -512,6 +512,9 @@ func GetMasterRecoveryType(analysisEntry *inst.ReplicationAnalysis) (masterRecov
 	return masterRecoveryType
 }
 
+/*
+ * 恢复 master 结点的逻辑
+ */
 // recoverDeadMaster recovers a dead master, complete logic inside
 func recoverDeadMaster(topologyRecovery *TopologyRecovery, candidateInstanceKey *inst.InstanceKey, skipProcesses bool) (recoveryAttempted bool, promotedReplica *inst.Instance, lostReplicas [](*inst.Instance), err error) {
 	topologyRecovery.Type = MasterRecovery
@@ -520,8 +523,14 @@ func recoverDeadMaster(topologyRecovery *TopologyRecovery, candidateInstanceKey 
 	var cannotReplicateReplicas [](*inst.Instance)
 	postponedAll := false
 
+	/*
+	 * 记录一下日志并且准备执行前置钩子
+	 */
 	inst.AuditOperation("recover-dead-master", failedInstanceKey, "problem found; will recover")
 	if !skipProcesses {
+		/*
+		 * 如果执行前置钩子的过程中报错，就直接退出
+		 */
 		if err := executeProcesses(config.Config.PreFailoverProcesses, "PreFailoverProcesses", topologyRecovery, true); err != nil {
 			return false, nil, lostReplicas, topologyRecovery.AddError(err)
 		}
@@ -876,9 +885,16 @@ func checkAndRecoverDeadMaster(analysisEntry inst.ReplicationAnalysis, candidate
 		return false, nil, err
 	}
 
+	/*
+	 * 在真正执行之前会记录下是要对哪个集群执行 recoverDeadMaster
+	 */
 	// That's it! We must do recovery!
 	AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("will handle DeadMaster event on %+v", analysisEntry.ClusterDetails.ClusterName))
 	recoverDeadMasterCounter.Inc(1)
+
+	/*
+	 *
+	 */
 	recoveryAttempted, promotedReplica, lostReplicas, err := recoverDeadMaster(topologyRecovery, candidateInstanceKey, skipProcesses)
 	if err != nil {
 		AuditTopologyRecovery(topologyRecovery, err.Error())
