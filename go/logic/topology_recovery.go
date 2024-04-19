@@ -121,14 +121,14 @@ type TopologyRecovery struct {
 
 func NewTopologyRecovery(replicationAnalysis inst.ReplicationAnalysis) *TopologyRecovery {
 	topologyRecovery := &TopologyRecovery{}
-	topologyRecovery.UID = util.PrettyUniqueToken()
-	topologyRecovery.AnalysisEntry = replicationAnalysis
+	topologyRecovery.UID = util.PrettyUniqueToken()      // 根据当前时间 + 盐值(进行启动时确定盐是多少，之后不会再改) 生成的一个随机值，所以可以看成这个是完全随机并且唯一的
+	topologyRecovery.AnalysisEntry = replicationAnalysis // 这里记录着要进行 recover 的对象，和一些其它的上下文信息
 	topologyRecovery.SuccessorKey = nil
 	topologyRecovery.SuccessorBinlogCoordinates = nil
 	topologyRecovery.LostReplicas = *inst.NewInstanceKeyMap()
 	topologyRecovery.ParticipatingInstanceKeys = *inst.NewInstanceKeyMap()
 	topologyRecovery.AllErrors = []string{}
-	topologyRecovery.RecoveryType = NotMasterRecovery
+	topologyRecovery.RecoveryType = NotMasterRecovery // 最开始的时候这个 RecoveryType 被设置成了 “NotMasterRecovery”
 	return topologyRecovery
 }
 
