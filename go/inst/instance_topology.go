@@ -622,16 +622,34 @@ func CheckMoveViaGTID(instance, otherInstance *Instance) (err error) {
 	return nil
 }
 
+/*
+ * 调用复制关系  instance 当 replica , otherInstance 当 master 。
+ * 1、检查能否挂在 otherInstance 后面做复制
+ * 2、调用 instance 实例状态为维护
+ * 3、关闭 instance 实例上之前的复制关系
+ * 4、执行 change master to 让 instance 挂在 otherInstance 后面
+ * 5、启动复制
+ */
 // moveInstanceBelowViaGTID will attempt moving given instance below another instance using either Oracle GTID or MariaDB GTID.
 func moveInstanceBelowViaGTID(instance, otherInstance *Instance) (*Instance, error) {
+	/*
+	 * 这里只是再次检查一下 instance 还能不连接上， 如果已经连接不上了后面的就没有意义了
+	 */
 	rinstance, _, _ := ReadInstance(&instance.Key)
 	if canMove, merr := rinstance.CanMoveViaMatch(); !canMove {
 		return instance, merr
 	}
 
+	/*
+	 * 检查 instance 能不能从 otherInstance 那里同步数据
+	 * 这里主要检查版本，server_id 等配置信息是不是兼容
+	 */
 	if canReplicate, err := instance.CanReplicateFrom(otherInstance); !canReplicate {
 		return instance, err
 	}
+	/*
+	 * 再检查一下 gtid 是不是子集
+	 */
 	if err := CheckMoveViaGTID(instance, otherInstance); err != nil {
 		return instance, err
 	}
@@ -640,6 +658,9 @@ func moveInstanceBelowViaGTID(instance, otherInstance *Instance) (*Instance, err
 	instanceKey := &instance.Key
 	otherInstanceKey := &otherInstance.Key
 
+	/*
+	 * 到这里就是准备调整复制关系了
+	 */
 	var err error
 	if maintenanceToken, merr := BeginMaintenance(instanceKey, GetMaintenanceOwner(), fmt.Sprintf("move below %+v", *otherInstanceKey)); merr != nil {
 		err = fmt.Errorf("Cannot begin maintenance on %+v: %v", *instanceKey, merr)
@@ -648,23 +669,30 @@ func moveInstanceBelowViaGTID(instance, otherInstance *Instance) (*Instance, err
 		defer EndMaintenance(maintenanceToken)
 	}
 
+	/*
+	 * 关闭复制
+	 */
 	instance, err = StopReplication(instanceKey)
 	if err != nil {
 		goto Cleanup
 	}
 
+	/*
+	 * 执行 change master to
+	 */
 	instance, err = ChangeMasterTo(instanceKey, &otherInstance.Key, &otherInstance.SelfBinlogCoordinates, false, GTIDHintForce)
 	if err != nil {
 		goto Cleanup
 	}
 Cleanup:
-	instance, _ = StartReplication(instanceKey)
+	instance, _ = StartReplication(instanceKey) // 启动复制线程
 	if err != nil {
 		return instance, log.Errore(err)
 	}
 	// and we're done (pending deferred functions)
 	AuditOperation("move-below-gtid", instanceKey, fmt.Sprintf("moved %+v below %+v", *instanceKey, *otherInstanceKey))
 
+	// 可以看到这个要等到执行完成 start slave 才能返回
 	return instance, err
 }
 
