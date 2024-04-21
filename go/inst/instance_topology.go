@@ -1926,6 +1926,9 @@ func sortedReplicasDataCenterHint(replicas [](*Instance), stopReplicationMethod 
 	if len(replicas) <= 1 {
 		return replicas
 	}
+	/*
+	 * 停止掉所有 replica 结点的复制，并且排除掉值为 nil 的实例(理论上这个场景不太可能存在)
+	 */
 	replicas = StopReplicas(replicas, stopReplicationMethod, time.Duration(config.Config.InstanceBulkOperationsWaitTimeoutSeconds)*time.Second)
 	replicas = RemoveNilInstances(replicas)
 
@@ -2202,6 +2205,9 @@ func getPriorityBinlogFormatForCandidate(replicas [](*Instance)) (priorityBinlog
 	return sorted.First(), nil
 }
 
+/*
+ * 对于候选结点
+ */
 // chooseCandidateReplica
 func chooseCandidateReplica(replicas [](*Instance)) (candidateReplica *Instance, aheadReplicas, equalReplicas, laterReplicas, cannotReplicateReplicas [](*Instance), err error) {
 	if len(replicas) == 0 {
@@ -2267,9 +2273,16 @@ func GetCandidateReplica(masterKey *InstanceKey, forRematchPurposes bool) (*Inst
 	cannotReplicateReplicas := [](*Instance){}
 
 	dataCenterHint := ""
+	/*
+	 * 根据 hostname : port 去取 instance 最多只能取出一个，如果不存在就会返回 nil
+	 * 看目前的逻辑它认为是一定能取到 master 的
+	 */
 	if master, _, _ := ReadInstance(masterKey); master != nil {
 		dataCenterHint = master.DataCenter
 	}
+	/*
+	 * 这里并没有排序的逻辑在里，只是根据 master 的 ip port 查出所有它的 replicas 结点
+	 */
 	replicas, err := getReplicasForSorting(masterKey, false)
 	if err != nil {
 		return candidateReplica, aheadReplicas, equalReplicas, laterReplicas, cannotReplicateReplicas, err
@@ -2278,10 +2291,21 @@ func GetCandidateReplica(masterKey *InstanceKey, forRematchPurposes bool) (*Inst
 	if forRematchPurposes {
 		stopReplicationMethod = StopReplicationNice
 	}
+
+	/*
+	 * 对所有的 replica 进行排序，数据中心，文件位点的方式进行排序
+	 */
 	replicas = sortedReplicasDataCenterHint(replicas, stopReplicationMethod, dataCenterHint)
 	if len(replicas) == 0 {
 		return candidateReplica, aheadReplicas, equalReplicas, laterReplicas, cannotReplicateReplicas, fmt.Errorf("No replicas found for %+v", *masterKey)
 	}
+	/*
+	 * 正常情况下候选主应该是 binlog 最多的，并且和当前宕机的 master 在同一数据中心
+	 * 一但候选主选举成功，那么所有的 replica 就分了 3 6 9 等了
+	 * 1、它的 binlog 比候选主的还要多 (如果选择跨机房切，这个时候选出来的候选主是远程机房的，所以 binlog 会少一些)
+	 * 2、它的 binlog 与候选主的一样多
+	 * 3、它的 binlog 比候选主的要少
+	 */
 	candidateReplica, aheadReplicas, equalReplicas, laterReplicas, cannotReplicateReplicas, err = chooseCandidateReplica(replicas)
 	if err != nil {
 		return candidateReplica, aheadReplicas, equalReplicas, laterReplicas, cannotReplicateReplicas, err
@@ -2505,11 +2529,16 @@ func RegroupReplicasPseudoGTIDIncludingSubReplicasOfBinlogServers(
 	return RegroupReplicasPseudoGTID(masterKey, returnReplicaEvenOnFailureToRegroup, onCandidateReplicaChosen, postponedFunctionsContainer, postponeAllMatchOperations)
 }
 
+/*
+ * 重新组织实例的复制关系
+ * 第一步：选举出候选主
+ *
+ */
 // RegroupReplicasGTID will choose a candidate replica of a given instance, and take its siblings using GTID
 func RegroupReplicasGTID(
 	masterKey *InstanceKey,
-	returnReplicaEvenOnFailureToRegroup bool,
-	startReplicationOnCandidate bool,
+	returnReplicaEvenOnFailureToRegroup bool, // 在 recoverDeadMaster 调用的时候这个参数值的是 true
+	startReplicationOnCandidate bool, // 在 recoverDeadMaster 调用的时候这个参数值的是 false
 	onCandidateReplicaChosen func(*Instance),
 	postponedFunctionsContainer *PostponedFunctionsContainer,
 	postponeAllMatchOperations func(*Instance, bool) bool,
@@ -2522,6 +2551,9 @@ func RegroupReplicasGTID(
 ) {
 	var emptyReplicas [](*Instance)
 	var unmovedReplicas [](*Instance)
+	/*
+	 * 选举出候选主
+	 */
 	candidateReplica, aheadReplicas, equalReplicas, laterReplicas, cannotReplicateReplicas, err := GetCandidateReplica(masterKey, true)
 	if err != nil {
 		if !returnReplicaEvenOnFailureToRegroup {
@@ -2533,6 +2565,9 @@ func RegroupReplicasGTID(
 	if onCandidateReplicaChosen != nil {
 		onCandidateReplicaChosen(candidateReplica)
 	}
+	/*
+	 * 对于 binlog 数据量 <= 候选主的实例，加到 replicasToMove 分片里
+	 */
 	replicasToMove := append(equalReplicas, laterReplicas...)
 	hasBestPromotionRule := true
 	if candidateReplica != nil {
