@@ -560,6 +560,11 @@ func recoverDeadMaster(topologyRecovery *TopologyRecovery, candidateInstanceKey 
 		}
 		return false
 	}
+	/*
+	 * 根据不同的复制方式，执行不同的选择主流程
+	 * 选择出要提升为主的 replica, 要丢数据的 replica, 要和新 replica 组成集群的 replica
+	 * 在这里会完成复制关系的重新组织, 也就是说这个 switch 搞完切换基本就完成了
+	 */
 	switch topologyRecovery.RecoveryType {
 	case MasterRecoveryGTID:
 		{
@@ -578,11 +583,17 @@ func recoverDeadMaster(topologyRecovery *TopologyRecovery, candidateInstanceKey 
 		}
 	}
 	topologyRecovery.AddError(err)
+	/*
+	 * 对于不能参与到新集群的 replica 打一下错误日志，和审计日志
+	 */
 	lostReplicas = append(lostReplicas, cannotReplicateReplicas...)
 	for _, replica := range lostReplicas {
 		AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("RecoverDeadMaster: - lost replica: %+v", replica.Key))
 	}
 
+	/*
+	 * 切换完成之后对于，所有没能加入到新集群的结点是否断开复制
+	 */
 	if promotedReplica != nil && len(lostReplicas) > 0 && config.Config.DetachLostReplicasAfterMasterFailover {
 		postponedFunction := func() error {
 			AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("RecoverDeadMaster: lost %+v replicas during recovery process; detaching them", len(lostReplicas)))
@@ -592,6 +603,9 @@ func recoverDeadMaster(topologyRecovery *TopologyRecovery, candidateInstanceKey 
 			}
 			return nil
 		}
+		/*
+		 * 注册一个在切换后要执行地的函数
+		 */
 		topologyRecovery.AddPostponedFunction(postponedFunction, fmt.Sprintf("RecoverDeadMaster, detach %+v lost replicas", len(lostReplicas)))
 	}
 
