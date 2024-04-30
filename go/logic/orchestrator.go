@@ -509,6 +509,9 @@ func injectSeeds(seedOnce *sync.Once) {
 func ContinuousDiscovery() {
 	log.Infof("continuous discovery: setting up")
 	continuousDiscoveryStartTime := time.Now()
+	/*
+	 * 这里是为了保证执行了三次 discovery 之后再执行 checkAndRecover
+	 */
 	checkAndRecoverWaitPeriod := 3 * instancePollSecondsDuration()
 	recentDiscoveryOperationKeys = cache.New(instancePollSecondsDuration(), time.Second)
 
@@ -527,6 +530,10 @@ func ContinuousDiscovery() {
 		snapshotTopologiesTick = time.Tick(time.Duration(config.Config.SnapshotTopologiesIntervalHours) * time.Hour)
 	}
 
+	/*
+	 * 在执行 checkAndRecover 的时候会用一这个函数
+	 * 逻辑上要求先执行完成 Discovery 之后再执行 checkAndRecover
+	 */
 	runCheckAndRecoverOperationsTimeRipe := func() bool {
 		return time.Since(continuousDiscoveryStartTime) >= checkAndRecoverWaitPeriod
 	}
@@ -626,6 +633,9 @@ func ContinuousDiscovery() {
 			log.Info("select-case: raftCaretakingTick")
 		case <-recoveryTick:
 			go func() {
+				/*
+				 * 保证只有在当前线程是 leader 结点的时候才会执行 CheckAndRecover 流程
+				 */
 				if IsLeaderOrActive() {
 					go ClearActiveFailureDetections()
 					go ClearActiveRecoveries()
@@ -640,12 +650,18 @@ func ContinuousDiscovery() {
 						} else {
 							return
 						}
+						/*
+						 * 这里用于确保 Discovery 的逻辑至少已经跑了三轮
+						 */
 						if runCheckAndRecoverOperationsTimeRipe() {
 							/*
 							 * 由于每次循环的时候都不知道是谁宕机了，所以这里传的是空值
 							 */
 							CheckAndRecover(nil, nil, false)
 						} else {
+							/*
+							 * 也就是说只有在刚启动的前面几次可以看到这条日志(Discovery 还没有跑完三轮)
+							 */
 							log.Debugf("Waiting for %+v seconds to pass before running failure detection/recovery", checkAndRecoverWaitPeriod.Seconds())
 						}
 					}()

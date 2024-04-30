@@ -1861,10 +1861,16 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 	log.Warning("enter executeCheckAndRecoverFunction", "candidateInstanceKey", candidateInstanceKey)
 	log.Warning("enter executeCheckAndRecoverFunction", "forceInstanceRecovery", strconv.FormatBool(forceInstanceRecovery), "skipProcesses", strconv.FormatBool(skipProcesses))
 
+	/*
+	 * 根据 analysisEntry.Analysis 决定返回哪个函数，比如主库宕机了会返回  checkAndRecoverDeadMaster 函数
+	 */
 	checkAndRecoverFunction, isActionableRecovery := getCheckAndRecoverFunction(analysisEntry.Analysis, &analysisEntry.AnalyzedInstanceKey)
 	analysisEntry.IsActionableRecovery = isActionableRecovery
 	runEmergentOperations(&analysisEntry)
 
+	/*
+	 * 如果确实有问题，但是又没有对应的 Function 可用，打印日志，前退出执行
+	 */
 	if checkAndRecoverFunction == nil {
 		// Unhandled problem type
 		if analysisEntry.Analysis != inst.NoProblem {
@@ -1876,7 +1882,7 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 
 		return false, nil, nil
 	}
-	// 检查一下有没有选择出要执行的文档
+	// 检查一下有没有选择出要执行的函数
 	log.Warning("checkAndRecoverFunction != nil", "isActionableRecovery", strconv.FormatBool(isActionableRecovery))
 
 	// we have a recovery function; its execution still depends on filters if not disabled.
@@ -1897,6 +1903,10 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 		}
 	}
 
+	/*
+	 * 1、这个要向元数据库中记录一笔，好知道有一个 FailureDetection 在搞了
+	 * 2、还要执行一下 config.Config.OnFailureDetectionProcesses 指定的脚本，如果这个时候遇到了错误， 会记录到 err 里面
+	 */
 	// Initiate detection:
 	registrationSuccess, _, err := checkAndExecuteFailureDetectionProcesses(analysisEntry, skipProcesses)
 	if registrationSuccess {
@@ -1938,7 +1948,15 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 	if isActionableRecovery || util.ClearToLog("executeCheckAndRecoverFunction: recovery", analysisEntry.AnalyzedInstanceKey.StringCode()) {
 		log.Infof("executeCheckAndRecoverFunction: proceeding with %+v recovery on %+v; isRecoverable?: %+v; skipProcesses: %+v", analysisEntry.Analysis, analysisEntry.AnalyzedInstanceKey, isActionableRecovery, skipProcesses)
 	}
+
+	/*
+	 * 这里就是真正的恢复逻辑了
+	 */
 	recoveryAttempted, topologyRecovery, err = checkAndRecoverFunction(analysisEntry, candidateInstanceKey, forceInstanceRecovery, skipProcesses)
+
+	/*
+	 * 对恢复的结果进行检查
+	 */
 	if !recoveryAttempted {
 		return recoveryAttempted, topologyRecovery, err
 	}
@@ -1950,16 +1968,29 @@ func executeCheckAndRecoverFunction(analysisEntry inst.ReplicationAnalysis, cand
 	} else {
 		log.Infof("Topology recovery: %+v", *topologyRecovery)
 	}
+	/*
+	 * 针对【成功】【失败】分别调用它对应的外部脚本
+	 */
 	if !skipProcesses {
 		if topologyRecovery.SuccessorKey == nil {
+			/*
+			 * SuccessorKey == nil 就是说切换失败了
+			 * 也就是说切换失败了会执行 PostUnsuccessfulFailoverProcesses
+			 */
 			// Execute general unsuccessful post failover processes
 			executeProcesses(config.Config.PostUnsuccessfulFailoverProcesses, "PostUnsuccessfulFailoverProcesses", topologyRecovery, false)
 		} else {
+			/*
+			 * 切换成功的情况下会执行 PostFailoverProcesses
+			 */
 			// Execute general post failover processes
 			inst.EndDowntime(topologyRecovery.SuccessorKey)
 			executeProcesses(config.Config.PostFailoverProcesses, "PostFailoverProcesses", topologyRecovery, false)
 		}
 	}
+	/*
+	 * 到这里的时候外部脚本都执行完成了，这里只是记一下日志了
+	 */
 	AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("Waiting for %d postponed functions", topologyRecovery.PostponedFunctionsContainer.Len()))
 	topologyRecovery.Wait()
 	AuditTopologyRecovery(topologyRecovery, fmt.Sprintf("Executed %d postponed functions", topologyRecovery.PostponedFunctionsContainer.Len()))
@@ -1983,7 +2014,9 @@ func CheckAndRecover(specificInstance *inst.InstanceKey, candidateInstanceKey *i
 	 */
 	replicationAnalysis, err := inst.GetReplicationAnalysis("", &inst.ReplicationAnalysisHints{IncludeDowntimed: true, AuditAnalysis: true})
 
-	//log.Warning("GetReplicationAnalysis result ", "replicationAnalysis", replicationAnalysis)
+	/*
+	 * 如果查询元数据的时候遇到了异常就不进行 CheckAndRecover 流程了
+	 */
 	if err != nil {
 		return false, nil, log.Errore(err)
 	}
@@ -1991,6 +2024,10 @@ func CheckAndRecover(specificInstance *inst.InstanceKey, candidateInstanceKey *i
 		log.Infof("--noop provided; will not execute processes")
 		skipProcesses = true
 	}
+
+	/*
+	 * 为每一个实例分配一个协和执行恢复动作
+	 */
 	// intentionally iterating entries in random order
 	for _, j := range rand.Perm(len(replicationAnalysis)) {
 		analysisEntry := replicationAnalysis[j]
