@@ -14,11 +14,16 @@
    limitations under the License.
 */
 
+/*
+ * 定义一个函数列表, 然后在后台协程中周期性的调用它们
+ */
+
 package metrics
 
 import (
-	"github.com/openark/orchestrator/go/config"
 	"time"
+
+	"github.com/openark/orchestrator/go/config"
 )
 
 var matricTickCallbacks [](func())
